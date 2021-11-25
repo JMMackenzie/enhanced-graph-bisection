@@ -161,7 +161,6 @@ fn main() -> Result<()> {
     let start_rgb = std::time::Instant::now();
     let depth = 1;
     //rgb::recursive_graph_bisection(
-    //rgb::recursive_graph_bisection_max_init(
     //rgb::recursive_graph_bisection_recurative(
     rgb::recursive_graph_bisection_iterative(
         &mut docs[..num_non_empty],

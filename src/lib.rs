@@ -4,6 +4,5 @@ pub mod ciff;
 pub mod output;
 
 pub use rgb::recursive_graph_bisection;
-pub use rgb::recursive_graph_bisection_max_init;
 pub use rgb::recursive_graph_bisection_iterative;
 pub use rgb::recursive_graph_bisection_recurative;

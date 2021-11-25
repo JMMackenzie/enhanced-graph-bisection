@@ -2,7 +2,6 @@ use crate::forward::Doc;
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSliceMut;
-use rayon::prelude::*;
 use std::cmp::Ordering::Equal;
 use std::cmp::{min, max};
 
@@ -403,6 +402,7 @@ fn approx_two_s(_log_to: f32, _log_from: f32, deg_to: i32, deg_from: i32) -> f32
 }
 
 // This function will compute gains using the baseline approach
+// PARALLEL VERSION
 fn compute_move_gains_default_l2r(
     from: &mut [Doc],
     log2_from: f32,
@@ -424,6 +424,8 @@ fn compute_move_gains_default_l2r(
     });
 }
 
+// This function will compute gains using the baseline approach
+// PARALLEL VERSION
 fn compute_move_gains_default_r2l(
     from: &mut [Doc],
     log2_from: f32,
@@ -448,6 +450,7 @@ fn compute_move_gains_default_r2l(
 
 
 // Computes gains using the first approximation, saving two log calls
+// PARALLEL VERSION
 fn compute_move_gains_a1_l2r(
     from: &mut [Doc],
     log2_from: f32,
@@ -468,6 +471,7 @@ fn compute_move_gains_a1_l2r(
     });
 }
 // Computes gains using the first approximation, saving two log calls
+// PARALLEL VERSION
 fn compute_move_gains_a1_r2l(
     from: &mut [Doc],
     log2_from: f32,
@@ -492,6 +496,7 @@ fn compute_move_gains_a1_r2l(
 
 // Computes gains using the second approximation, saving four log calls
 // Since it's symmetric, we don't need an l2r or r2l function
+// PARALLEL VERSION
 fn compute_move_gains_a2(
     from: &mut [Doc],
     log2_from: f32,
@@ -513,6 +518,7 @@ fn compute_move_gains_a2(
 }
 
 // This function will compute gains using the baseline approach
+// SEQUENTIAL VERSION
 fn compute_move_gains_default_l2r_seq(
     from: &mut [Doc],
     log2_from: f32,
@@ -534,6 +540,8 @@ fn compute_move_gains_default_l2r_seq(
     });
 }
 
+// This function will compute gains using the baseline approach
+// SEQUENTIAL VERSION
 fn compute_move_gains_default_r2l_seq(
     from: &mut [Doc],
     log2_from: f32,
@@ -558,6 +566,7 @@ fn compute_move_gains_default_r2l_seq(
 
 
 // Computes gains using the first approximation, saving two log calls
+// SEQUENTIAL VERSION
 fn compute_move_gains_a1_l2r_seq(
     from: &mut [Doc],
     log2_from: f32,
@@ -578,6 +587,7 @@ fn compute_move_gains_a1_l2r_seq(
     });
 }
 // Computes gains using the first approximation, saving two log calls
+// SEQUENTIAL VERSION
 fn compute_move_gains_a1_r2l_seq(
     from: &mut [Doc],
     log2_from: f32,
@@ -600,6 +610,7 @@ fn compute_move_gains_a1_r2l_seq(
 
 // Computes gains using the second approximation, saving four log calls
 // Since it's symmetric, we don't need an l2r or r2l function
+// SEQUENTIAL VERSION
 fn compute_move_gains_a2_seq(
     from: &mut [Doc],
     log2_from: f32,
@@ -622,6 +633,7 @@ fn compute_move_gains_a2_seq(
 
 // This function is a wrapper to the correct gain function, which is specified at compile-time
 // using the `GAIN` environment variable
+// PARALLEL VERSION
 fn compute_gains(mut left: &mut [Doc], mut right: &mut [Doc], ldeg: &[i32], rdeg: &[i32]) {
     let gain_func: Option<&'static str> = std::option_env!("GAIN");
     let gain_func = gain_func.unwrap();
@@ -678,6 +690,7 @@ fn compute_gains(mut left: &mut [Doc], mut right: &mut [Doc], ldeg: &[i32], rdeg
 
 // This function is a wrapper to the correct gain function, which is specified at compile-time
 // using the `GAIN` environment variable
+// SEQUENTIAL VERSION
 fn compute_gains_seq(mut left: &mut [Doc], mut right: &mut [Doc], ldeg: &[i32], rdeg: &[i32]) {
     let gain_func: Option<&'static str> = std::option_env!("GAIN");
     let gain_func = gain_func.unwrap();
@@ -716,6 +729,7 @@ fn compute_gains_seq(mut left: &mut [Doc], mut right: &mut [Doc], ldeg: &[i32], 
 
 
 // The heavy lifting -- core logic for the BP process
+// PARALLEL VERSION
 fn process_partitions(
     mut docs: &mut [Doc],
     num_terms: usize,
@@ -784,7 +798,8 @@ fn process_partitions(
     }
 }
 
-// The heavy lifting -- core logic for the BP process
+// The heavy lifting -- core logic for the BP process. 
+// SEQUENTIAL VERSION
 fn process_partitions_seq(
     mut docs: &mut [Doc],
     num_terms: usize,
@@ -851,53 +866,7 @@ fn process_partitions_seq(
     }
 }
 
-pub fn recursive_graph_bisection_max_init(
-    docs: &mut [Doc],
-    num_terms: usize,
-    iterations: usize,
-    min_partition_size: usize,
-    max_depth: usize,
-    depth: usize,
-    sort_leaf: bool,
-    id: usize,
-) {
-    
-    // Break the collection into chunks and call BP on those...
-  
-    let chunk_count = 32;
-    let mut chunk_size = docs.len() / chunk_count as usize; // Powers of 2?
-
-    // XXX: Rewrite this to yield chunks based on our own slicing sizes?
-    docs.par_chunks_mut(chunk_size as usize).for_each(|current_slice| {
-        recursive_graph_bisection(current_slice, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, 2*id);
-    });
- 
-    /*
-    let (mut left, mut right) = docs.split_at_mut(docs.len() / 2);
- 
-    let (mut left_left, mut left_right) = left.split_at_mut(left.len() / 2);
-    let (mut right_left, mut right_right) = right.split_at_mut(right.len() / 2);
-    
-
-    // (2) recurse left and right
-    rayon::scope(|s| {
-        s.spawn(|_| {
-            recursive_graph_bisection(&mut left_left, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, 2*id);
-        });
-        s.spawn(|_| {
-            recursive_graph_bisection(&mut left_right, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, 2*id+1);
-        });
-        s.spawn(|_| {
-            recursive_graph_bisection(&mut right_left, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, 2*id);
-        });
-        s.spawn(|_| {
-            recursive_graph_bisection(&mut right_right, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, 2*id+1);
-        });
-    });
-*/
-}
-
-
+// The `default` and purely recursive graph bisection implementation.
 pub fn recursive_graph_bisection(
     docs: &mut [Doc],
     num_terms: usize,
@@ -918,6 +887,10 @@ pub fn recursive_graph_bisection(
     }
 
     // (1) swap around docs between the two halves based on move gains
+    //
+    // XXX Note that we only use parallel processing for small jobs (within the
+    // processing) when we have fewer than 32 unique jobs to work on at once.
+    // This should theoretically help avoid queuing/contention/preemption issues
     if depth >  5 { // No parallel
         process_partitions_seq(docs, num_terms, iterations);
     } else {
@@ -938,6 +911,70 @@ pub fn recursive_graph_bisection(
 
 }
 
+pub fn recursive_graph_bisection_iterative(
+    docs: &mut [Doc],
+    num_terms: usize,
+    iterations: usize,
+    min_partition_size: usize,
+    max_depth: usize,
+    _depth: usize,
+    sort_leaf: bool,
+    _id: usize,
+) {
+
+    // The initial slice is the whole collection
+    let mut all_slices = Vec::new();
+    all_slices.push(&mut docs[..]);
+
+    let mut current_depth = 0;
+
+    // We loop until we run out of slices to process
+    while !all_slices.is_empty() { 
+   
+        current_depth +=1; 
+
+        // (1) Process the slices
+        //
+        // XXX We might want to do selective parallelization; 1024 is a magic number
+        // which should probably be understood better. Anyway, for now, we'll stop
+        // dispatching parallel processing for internal (micro) tasks once we have
+        // at least 1024 individual slices to operate on in parallel
+        if all_slices.len() >= 1024 {
+            all_slices
+                .par_iter_mut()
+                .for_each(|slice| process_partitions_seq(slice, num_terms, iterations));
+        } else {
+            all_slices
+                .par_iter_mut()
+                .for_each(|slice| process_partitions(slice, num_terms, iterations));
+        }
+
+        // (2) Compute the new slices
+        all_slices = all_slices
+            .into_iter()
+            .map(|s| s.split_at_mut(s.len() / 2))
+            .map(|(left, right)| vec![left, right])
+            .flatten()
+            .filter(|s| s.len() >= min_partition_size)
+            .collect();
+
+        // (3) Guard for max_depth settings
+        if current_depth == max_depth {
+            break;
+        }
+    }
+
+    // (4) Sort by leaf if required
+    if sort_leaf {
+        docs.sort_by(|a, b| a.org_id.cmp(&b.org_id));
+    }
+ 
+}
+
+// This is a helper call for the `recurative` BP approach. This is the
+// same as the original BP method, but will only call `process_partitions`
+// when we hit the target depth. Note that this approach does not (yet)
+// include the selective parallelization.
 pub fn recursive_graph_bisection_at_depth(
     docs: &mut [Doc],
     num_terms: usize,
@@ -980,76 +1017,9 @@ pub fn recursive_graph_bisection_at_depth(
  
 }
 
-pub fn recursive_graph_bisection_iterative(
-    docs: &mut [Doc],
-    num_terms: usize,
-    iterations: usize,
-    min_partition_size: usize,
-    max_depth: usize,
-    depth: usize,
-    sort_leaf: bool,
-    id: usize,
-) {
 
-
-    let mut all_slices = Vec::new();
-    all_slices.push(&mut docs[..]);
-
-    while !all_slices.is_empty() { 
-   
-        // (1) Process the slices
-        //if all_slices.len() >= 1024 {
-        //    all_slices
-        //        .par_iter_mut()
-        //        .for_each(|slice| process_partitions_seq(slice, num_terms, iterations));
-        //} else {
-            all_slices
-                .par_iter_mut()
-                .for_each(|slice| process_partitions(slice, num_terms, iterations));
-        //}
-
-        // (2) Compute the new slices
-        all_slices = all_slices
-            .into_iter()
-            .map(|s| s.split_at_mut(s.len() / 2))
-            .map(|(left, right)| vec![left, right])
-            .flatten()
-            .filter(|s| s.len() >= min_partition_size)
-            .collect();
-
-        // (3) Remove any slices which have fewer than minimum elements
-        //all_slices.retain(|slice| slice.len() > min_partition_size);
-
-    }
-    /*
-        // How many `cuts` at depth t?
-        // 2**t
-        println!("Current depth = {}", target_depth);
-        let chunk_count = i32::pow(2, target_depth as u32);
-        let mut chunk_size = docs.len() / chunk_count as usize; // Powers of 2?
-
-        // Find the nearest chunk size which will divide equally into the min partition
-        while chunk_size % min_partition_size != 0 {
-            chunk_size-=1;
-        }
-
-        if chunk_size < min_partition_size {
-            break;
-        }
-
-        // XXX: Rewrite this to yield chunks based on our own slicing sizes?
-        docs.par_chunks_mut(chunk_size as usize).for_each(|current_slice| {
-            process_partitions(current_slice, num_terms, iterations);
-        });
-    }
-    */
-    /*
-    for target_depth in 0..max_depth {
-        recursive_graph_bisection_at_depth(docs, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, target_depth, id);
- 
-    }*/
-}
- 
+// This is a kind of `fake` iterative approach. It uses recursions to go down to a target depth, do
+// the processing there, and then comes back up to the top.
 pub fn recursive_graph_bisection_recurative(
     docs: &mut [Doc],
     num_terms: usize,
