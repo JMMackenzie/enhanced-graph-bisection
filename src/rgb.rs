@@ -2,6 +2,7 @@ use crate::forward::Doc;
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSliceMut;
+use rayon::prelude::*;
 use std::cmp::Ordering::Equal;
 use std::cmp::{min, max};
 
@@ -303,7 +304,7 @@ fn fix_degrees(
     for doc in docs.iter() {
         // Doc went right to left
         if doc.leaf_id == -1 {
-            for (term, _) in &doc.postings {
+            for term in &doc.terms {
                 left_degs[*term as usize] += 1;
                 right_degs[*term as usize] -= 1;
             }
@@ -311,7 +312,7 @@ fn fix_degrees(
         } 
         // Moved left to right
         else if doc.leaf_id == 1 {
-            for (term, _) in &doc.postings {
+            for term in &doc.terms {
                 left_degs[*term as usize] -= 1;
                 right_degs[*term as usize] += 1;
             }
@@ -338,11 +339,11 @@ fn swap_documents(
     let mut num_swaps = 0;
     for (l, r) in left.iter_mut().zip(right.iter_mut()) {
         if l.gain - r.gain > tolerance {
-            for (term, _) in &l.postings {
+            for term in &l.terms {
                 left_degs[*term as usize] -= 1;
                 right_degs[*term as usize] += 1;
             }
-            for (term, _) in &r.postings {
+            for term in &r.terms {
                 left_degs[*term as usize] += 1;
                 right_degs[*term as usize] -= 1;
             }
@@ -359,7 +360,7 @@ fn swap_documents(
 fn compute_degrees(docs: &[Doc], num_terms: usize) -> Vec<i32> { 
     let mut degrees = vec![0; num_terms];
     for doc in docs {
-        for (term, _) in &doc.postings {
+        for term in &doc.terms {
             degrees[*term as usize] += 1;
         }
     }
@@ -411,7 +412,7 @@ fn compute_move_gains_default_l2r(
 ) {
     from.par_iter_mut().for_each(|doc| {
         let mut doc_gain = 0.0f32;
-        for (term, _) in &doc.postings {
+        for term in &doc.terms {
             let from_deg = fdeg[*term as usize];
             let to_deg = tdeg[*term as usize];
             let term_gain = expb(log2_from, log2_to, from_deg, to_deg)
@@ -432,7 +433,7 @@ fn compute_move_gains_default_r2l(
 ) {
     from.par_iter_mut().for_each(|doc| {
         let mut doc_gain = 0.0f32;
-        for (term, _) in &doc.postings {
+        for term in &doc.terms {
             let from_deg = fdeg[*term as usize];
             let to_deg = tdeg[*term as usize];
             let term_gain = expb(log2_from, log2_to, from_deg, to_deg)
@@ -456,7 +457,7 @@ fn compute_move_gains_a1_l2r(
 ) {
     from.par_iter_mut().for_each(|doc| {
         let mut doc_gain = 0.0f32;
-        for (term, _) in &doc.postings {
+        for term in &doc.terms {
             let from_deg = fdeg[*term as usize];
             let to_deg = tdeg[*term as usize];
             let term_gain = approx_one_a(log2_to, log2_from, to_deg, from_deg);
@@ -476,7 +477,7 @@ fn compute_move_gains_a1_r2l(
 ) {
     from.par_iter_mut().for_each(|doc| {
         let mut doc_gain = 0.0f32;
-        for (term, _) in &doc.postings {
+        for term in &doc.terms {
             let from_deg = fdeg[*term as usize];
             let to_deg = tdeg[*term as usize];
             let term_gain = approx_one_a(log2_to, log2_from, to_deg, from_deg);
@@ -500,7 +501,115 @@ fn compute_move_gains_a2(
 ) {
     from.par_iter_mut().for_each(|doc| {
         let mut doc_gain = 0.0f32;
-        for (term, _) in &doc.postings {
+        for term in &doc.terms {
+            let from_deg = fdeg[*term as usize];
+            let to_deg = tdeg[*term as usize];
+            let term_gain = approx_two_s(log2_to, log2_from, to_deg, from_deg);
+            doc_gain += term_gain;
+        }
+        doc.gain = doc_gain;
+        doc.leaf_id = 0; 
+    });
+}
+
+// This function will compute gains using the baseline approach
+fn compute_move_gains_default_l2r_seq(
+    from: &mut [Doc],
+    log2_from: f32,
+    log2_to: f32,
+    fdeg: &[i32],
+    tdeg: &[i32],
+) {
+    from.iter_mut().for_each(|doc| {
+        let mut doc_gain = 0.0f32;
+        for term in &doc.terms {
+            let from_deg = fdeg[*term as usize];
+            let to_deg = tdeg[*term as usize];
+            let term_gain = expb(log2_from, log2_to, from_deg, to_deg)
+                - expb(log2_from, log2_to, from_deg - 1, to_deg + 1);
+            doc_gain += term_gain;
+        }
+        doc.gain = doc_gain;
+        doc.leaf_id = 0;
+    });
+}
+
+fn compute_move_gains_default_r2l_seq(
+    from: &mut [Doc],
+    log2_from: f32,
+    log2_to: f32,
+    fdeg: &[i32],
+    tdeg: &[i32],
+) {
+    from.iter_mut().for_each(|doc| {
+        let mut doc_gain = 0.0f32;
+        for term in &doc.terms {
+            let from_deg = fdeg[*term as usize];
+            let to_deg = tdeg[*term as usize];
+            let term_gain = expb(log2_from, log2_to, from_deg, to_deg)
+                - expb(log2_from, log2_to, from_deg - 1, to_deg + 1);
+            doc_gain -= term_gain;
+        }
+        doc.gain = doc_gain;
+        doc.leaf_id = 0;
+    });
+}
+
+
+
+// Computes gains using the first approximation, saving two log calls
+fn compute_move_gains_a1_l2r_seq(
+    from: &mut [Doc],
+    log2_from: f32,
+    log2_to: f32,
+    fdeg: &[i32],
+    tdeg: &[i32],
+) {
+    from.iter_mut().for_each(|doc| {
+        let mut doc_gain = 0.0f32;
+        for term in &doc.terms {
+            let from_deg = fdeg[*term as usize];
+            let to_deg = tdeg[*term as usize];
+            let term_gain = approx_one_a(log2_to, log2_from, to_deg, from_deg);
+            doc_gain += term_gain;
+        }
+        doc.gain = doc_gain;
+        doc.leaf_id = 0;
+    });
+}
+// Computes gains using the first approximation, saving two log calls
+fn compute_move_gains_a1_r2l_seq(
+    from: &mut [Doc],
+    log2_from: f32,
+    log2_to: f32,
+    fdeg: &[i32],
+    tdeg: &[i32],
+) {
+    from.iter_mut().for_each(|doc| {
+        let mut doc_gain = 0.0f32;
+        for term in &doc.terms {
+            let from_deg = fdeg[*term as usize];
+            let to_deg = tdeg[*term as usize];
+            let term_gain = approx_one_a(log2_to, log2_from, to_deg, from_deg);
+            doc_gain -= term_gain; // Note the negative sign here
+        }
+        doc.gain = doc_gain;
+        doc.leaf_id = 0;
+    });
+}
+
+// Computes gains using the second approximation, saving four log calls
+// Since it's symmetric, we don't need an l2r or r2l function
+fn compute_move_gains_a2_seq(
+    from: &mut [Doc],
+    log2_from: f32,
+    log2_to: f32,
+    fdeg: &[i32],
+    tdeg: &[i32],
+) {
+    from.iter_mut().for_each(|doc| {
+        let mut doc_gain = 0.0f32;
+        for term in &doc.terms {
             let from_deg = fdeg[*term as usize];
             let to_deg = tdeg[*term as usize];
             let term_gain = approx_two_s(log2_to, log2_from, to_deg, from_deg);
@@ -558,6 +667,44 @@ fn compute_gains(mut left: &mut [Doc], mut right: &mut [Doc], ldeg: &[i32], rdeg
                     compute_move_gains_a2(&mut right, log2_right, log2_left, &ldeg, &rdeg);
                 });
             });
+        }
+
+        // Should be unreachable...
+        _ => {
+            log::info!("Error: Couldn't match the gain function.");
+        }
+    }
+}
+
+// This function is a wrapper to the correct gain function, which is specified at compile-time
+// using the `GAIN` environment variable
+fn compute_gains_seq(mut left: &mut [Doc], mut right: &mut [Doc], ldeg: &[i32], rdeg: &[i32]) {
+    let gain_func: Option<&'static str> = std::option_env!("GAIN");
+    let gain_func = gain_func.unwrap();
+
+    let log2_left = 0.0;
+    let log2_right = 0.0;
+
+    // (0) -- Default gain
+    match gain_func {
+        "default" => {
+            let log2_left = (left.len() as f32).log2();
+            let log2_right = (right.len() as f32).log2();
+            compute_move_gains_default_l2r_seq(&mut left, log2_left, log2_right, &ldeg, &rdeg);
+            compute_move_gains_default_r2l_seq(&mut right, log2_right, log2_left, &rdeg, &ldeg);
+        }
+        // (1) -- First approximation
+        "approx_1" => {
+            compute_move_gains_a1_l2r_seq(&mut left, log2_left, log2_right, &ldeg, &rdeg);
+            compute_move_gains_a1_r2l_seq(&mut right, log2_right, log2_left, &rdeg, &ldeg);
+        }
+
+        // (2) -- Second approximation: Note that the right hand call needs to have the parameters
+        // reversed for rdeg and ldeg if we opt for the `sorting` computation mode instead of the
+        // `swapping` mode
+        "approx_2" => {
+            compute_move_gains_a2_seq(&mut left, log2_left, log2_right, &ldeg, &rdeg);
+            compute_move_gains_a2_seq(&mut right, log2_right, log2_left, &ldeg, &rdeg);
         }
 
         // Should be unreachable...
@@ -637,6 +784,120 @@ fn process_partitions(
     }
 }
 
+// The heavy lifting -- core logic for the BP process
+fn process_partitions_seq(
+    mut docs: &mut [Doc],
+    num_terms: usize,
+    iterations: usize,
+) {
+
+    // compute degrees in left and right partition for each term
+    let mut left_deg = compute_degrees_l(&docs, num_terms);
+    let mut right_deg = compute_degrees_r(&docs, num_terms); 
+
+    for _iter in 0..iterations {
+    
+        // Minselect method
+        if QUICKSELECT { 
+            
+            // Split in half and compute gains
+            let (mut left, mut right) = docs.split_at_mut(docs.len() / 2);
+            compute_gains_seq(&mut left, &mut right, &left_deg[..], &right_deg[..]);
+
+            // Use quickselect to partition the global doc slice into < median and > median
+            let median_idx = docs.len() / 2;
+
+            if COOLING {
+                partition_quickselect(&mut docs, median_idx, (_iter as f32) * 0.5); // Simulated annealing
+            } else {
+                partition_quickselect(&mut docs, median_idx, 0.0);
+            }
+
+            // Go through swapped documents and fix the term degrees
+            let nswaps = fix_degrees(docs, &mut left_deg[..], &mut right_deg[..]);
+            if nswaps == 0 {
+                break;
+            }
+
+        } 
+        
+        // Regular sort+swap method. Note that this uses a parallel sort if PSORT is set to `true`.
+        else {
+
+            // Split in half and compute gains
+            let (mut left, mut right) = docs.split_at_mut(docs.len() / 2);
+            compute_gains_seq(&mut left, &mut right, &left_deg[..], &right_deg[..]);
+
+            // Use parallel sorts on each half to re-arrange documents by their gains
+            if PSORT {
+                left.par_sort_by(|a, b| b.gain.partial_cmp(&a.gain).unwrap_or(Equal)); // Sort gains high to low
+                right.par_sort_by(|a, b| a.gain.partial_cmp(&b.gain).unwrap_or(Equal)); // Sort gains low to high
+            } else {
+                left.sort_by(|a, b| b.gain.partial_cmp(&a.gain).unwrap_or(Equal)); // Sort gains high to low
+                right.sort_by(|a, b| a.gain.partial_cmp(&b.gain).unwrap_or(Equal)); // Sort gains low to high
+            }
+
+            // Go through and swap documents between partitions
+            let nswaps = if COOLING {
+                swap_documents(&mut left, &mut right, &mut left_deg[..], &mut right_deg[..], _iter as f32) // Simulated annealing
+            } else {
+                swap_documents(&mut left, &mut right, &mut left_deg[..], &mut right_deg[..], 0.0)
+            };
+
+            if nswaps == 0 {
+                break;
+            }
+        }
+    }
+}
+
+pub fn recursive_graph_bisection_max_init(
+    docs: &mut [Doc],
+    num_terms: usize,
+    iterations: usize,
+    min_partition_size: usize,
+    max_depth: usize,
+    depth: usize,
+    sort_leaf: bool,
+    id: usize,
+) {
+    
+    // Break the collection into chunks and call BP on those...
+  
+    let chunk_count = 32;
+    let mut chunk_size = docs.len() / chunk_count as usize; // Powers of 2?
+
+    // XXX: Rewrite this to yield chunks based on our own slicing sizes?
+    docs.par_chunks_mut(chunk_size as usize).for_each(|current_slice| {
+        recursive_graph_bisection(current_slice, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, 2*id);
+    });
+ 
+    /*
+    let (mut left, mut right) = docs.split_at_mut(docs.len() / 2);
+ 
+    let (mut left_left, mut left_right) = left.split_at_mut(left.len() / 2);
+    let (mut right_left, mut right_right) = right.split_at_mut(right.len() / 2);
+    
+
+    // (2) recurse left and right
+    rayon::scope(|s| {
+        s.spawn(|_| {
+            recursive_graph_bisection(&mut left_left, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, 2*id);
+        });
+        s.spawn(|_| {
+            recursive_graph_bisection(&mut left_right, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, 2*id+1);
+        });
+        s.spawn(|_| {
+            recursive_graph_bisection(&mut right_left, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, 2*id);
+        });
+        s.spawn(|_| {
+            recursive_graph_bisection(&mut right_right, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, 2*id+1);
+        });
+    });
+*/
+}
+
+
 pub fn recursive_graph_bisection(
     docs: &mut [Doc],
     num_terms: usize,
@@ -645,6 +906,7 @@ pub fn recursive_graph_bisection(
     max_depth: usize,
     depth: usize,
     sort_leaf: bool,
+    id: usize,
 ) {
     // recursion end?
     if docs.len() <= min_partition_size || depth > max_depth {
@@ -656,19 +918,24 @@ pub fn recursive_graph_bisection(
     }
 
     // (1) swap around docs between the two halves based on move gains
-    process_partitions(docs, num_terms, iterations);
+    if depth >  5 { // No parallel
+        process_partitions_seq(docs, num_terms, iterations);
+    } else {
+        process_partitions(docs, num_terms, iterations);
+    }
 
     let (mut left, mut right) = docs.split_at_mut(docs.len() / 2);
  
     // (2) recurse left and right
     rayon::scope(|s| {
         s.spawn(|_| {
-            recursive_graph_bisection(&mut left, num_terms, iterations, min_partition_size, max_depth, depth+1, sort_leaf);
+            recursive_graph_bisection(&mut left, num_terms, iterations, min_partition_size, max_depth, depth+1, sort_leaf, 2*id);
         });
         s.spawn(|_| {
-            recursive_graph_bisection(&mut right, num_terms, iterations, min_partition_size, max_depth, depth+1, sort_leaf);
+            recursive_graph_bisection(&mut right, num_terms, iterations, min_partition_size, max_depth, depth+1, sort_leaf, 2*id+1);
         });
     });
+
 }
 
 pub fn recursive_graph_bisection_at_depth(
@@ -680,6 +947,7 @@ pub fn recursive_graph_bisection_at_depth(
     depth: usize,
     sort_leaf: bool,
     process_depth: usize,
+    id: usize,
 ) {
     // recursion end?
     if docs.len() <= min_partition_size || depth > max_depth {
@@ -698,16 +966,18 @@ pub fn recursive_graph_bisection_at_depth(
 
     // Otherwise, we split and continue...
     let (mut left, mut right) = docs.split_at_mut(docs.len() / 2);
+
  
     // (2) recurse left and right
-    rayon::scope(|s| {
-        s.spawn(|_| {
-            recursive_graph_bisection_at_depth(&mut left, num_terms, iterations, min_partition_size, max_depth, depth+1, sort_leaf, process_depth);
+    rayon::scope_fifo(|s| {
+        s.spawn_fifo(|_| {
+            recursive_graph_bisection_at_depth(&mut left, num_terms, iterations, min_partition_size, max_depth, depth+1, sort_leaf, process_depth, 2*id);
         });
-        s.spawn(|_| {
-            recursive_graph_bisection_at_depth(&mut right, num_terms, iterations, min_partition_size, max_depth, depth+1, sort_leaf, process_depth);
+        s.spawn_fifo(|_| {
+            recursive_graph_bisection_at_depth(&mut right, num_terms, iterations, min_partition_size, max_depth, depth+1, sort_leaf, process_depth, 2*id+1);
         });
     });
+ 
 }
 
 pub fn recursive_graph_bisection_iterative(
@@ -718,10 +988,81 @@ pub fn recursive_graph_bisection_iterative(
     max_depth: usize,
     depth: usize,
     sort_leaf: bool,
+    id: usize,
 ) {
- 
+
+
+    let mut all_slices = Vec::new();
+    all_slices.push(&mut docs[..]);
+
+    while !all_slices.is_empty() { 
+   
+        // (1) Process the slices
+        //if all_slices.len() >= 1024 {
+        //    all_slices
+        //        .par_iter_mut()
+        //        .for_each(|slice| process_partitions_seq(slice, num_terms, iterations));
+        //} else {
+            all_slices
+                .par_iter_mut()
+                .for_each(|slice| process_partitions(slice, num_terms, iterations));
+        //}
+
+        // (2) Compute the new slices
+        all_slices = all_slices
+            .into_iter()
+            .map(|s| s.split_at_mut(s.len() / 2))
+            .map(|(left, right)| vec![left, right])
+            .flatten()
+            .filter(|s| s.len() >= min_partition_size)
+            .collect();
+
+        // (3) Remove any slices which have fewer than minimum elements
+        //all_slices.retain(|slice| slice.len() > min_partition_size);
+
+    }
+    /*
+        // How many `cuts` at depth t?
+        // 2**t
+        println!("Current depth = {}", target_depth);
+        let chunk_count = i32::pow(2, target_depth as u32);
+        let mut chunk_size = docs.len() / chunk_count as usize; // Powers of 2?
+
+        // Find the nearest chunk size which will divide equally into the min partition
+        while chunk_size % min_partition_size != 0 {
+            chunk_size-=1;
+        }
+
+        if chunk_size < min_partition_size {
+            break;
+        }
+
+        // XXX: Rewrite this to yield chunks based on our own slicing sizes?
+        docs.par_chunks_mut(chunk_size as usize).for_each(|current_slice| {
+            process_partitions(current_slice, num_terms, iterations);
+        });
+    }
+    */
+    /*
     for target_depth in 0..max_depth {
-        recursive_graph_bisection_at_depth(docs, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, target_depth);
+        recursive_graph_bisection_at_depth(docs, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, target_depth, id);
+ 
+    }*/
+}
+ 
+pub fn recursive_graph_bisection_recurative(
+    docs: &mut [Doc],
+    num_terms: usize,
+    iterations: usize,
+    min_partition_size: usize,
+    max_depth: usize,
+    depth: usize,
+    sort_leaf: bool,
+    id: usize,
+) {
+
+    for target_depth in 0..max_depth {
+        recursive_graph_bisection_at_depth(docs, num_terms, iterations, min_partition_size, max_depth, depth, sort_leaf, target_depth, id);
     }
 }
  
