@@ -3,10 +3,10 @@ use thiserror::Error;
 
 use crate::ciff;
 
+use bincode::{deserialize_from, serialize_into};
+use serde::{Deserialize, Serialize};
 use std::fs::File;
-use bincode::{serialize_into, deserialize_from};
-use std::io::{BufWriter};
-use serde::{Serialize, Deserialize};
+use std::io::BufWriter;
 
 type Posting = (u32, u32);
 
@@ -32,10 +32,7 @@ pub struct Forward {
     pub uniq_terms: usize,
 }
 
-
-pub fn from_file<P: AsRef<std::path::Path>>(
-    file_path: P
-) -> Result<Forward, bincode::Error> {
+pub fn from_file<P: AsRef<std::path::Path>>(file_path: P) -> Result<Forward, bincode::Error> {
     let in_file = std::io::BufReader::new(std::fs::File::open(file_path)?);
     deserialize_from(in_file)
 }
@@ -48,8 +45,7 @@ pub fn from_ciff<P: AsRef<std::path::Path>>(
 ) -> Result<Forward, Error> {
     let ciff_file = std::fs::File::open(file_path)?;
     let mut ciff_file = std::io::BufReader::new(ciff_file);
-    let mut ciff_reader =
-        ciff::Reader::new(&mut ciff_file).map_err(|_e| Error::CiffOpenError)?;
+    let mut ciff_reader = ciff::Reader::new(&mut ciff_file).map_err(|_e| Error::CiffOpenError)?;
     let num_docs = ciff_reader.num_docs();
     let mut docs = Vec::with_capacity(num_docs as usize);
     for doc_id in 0..num_docs {
@@ -89,7 +85,9 @@ pub fn from_ciff<P: AsRef<std::path::Path>>(
         let mut doc_id: usize = 0;
         for posting in postings {
             doc_id += posting.get_docid() as usize;
-            docs[doc_id].postings.push((term_id, posting.get_tf() as u32));
+            docs[doc_id]
+                .postings
+                .push((term_id, posting.get_tf() as u32));
         }
         term_id += 1;
         uniq_terms += 1;
@@ -109,7 +107,7 @@ pub fn from_ciff<P: AsRef<std::path::Path>>(
     if let Some(path) = output_path {
         info!("Saving forward index to file: {:?}", path.as_ref().to_str());
         let mut of = BufWriter::new(File::create(path).unwrap());
-        serialize_into(&mut of, &forward_idx).unwrap(); 
+        serialize_into(&mut of, &forward_idx).unwrap();
     }
 
     Ok(forward_idx)

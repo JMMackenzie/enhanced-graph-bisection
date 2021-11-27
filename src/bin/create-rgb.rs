@@ -6,8 +6,8 @@ use simplelog::*;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
-use rgb::forward;
 use rgb::ciff;
+use rgb::forward;
 use rgb::output;
 
 #[derive(Debug, StructOpt)]
@@ -63,7 +63,22 @@ struct Opt {
     /// Dump the document map
     #[structopt(long, parse(from_os_str))]
     output_mapping: Option<PathBuf>,
-    
+
+    /// Specify gain type
+    #[structopt(long, default_value = "default")]
+    gain_type: rgb::GainType,
+
+    /// Specify process mode
+    #[structopt(long, default_value = "sort")]
+    sort_type: rgb::SortType,
+
+    /// Specify process mode
+    #[structopt(long, default_value = "parallel_100")]
+    process_mode: rgb::ProcessMode,
+
+    /// Cooling
+    #[structopt(long)]
+    cooling: bool,
 }
 
 fn compute_loggapsum<P: AsRef<std::path::Path>>(file_path: P) -> (f64, usize) {
@@ -92,56 +107,50 @@ fn compute_loggapsum<P: AsRef<std::path::Path>>(file_path: P) -> (f64, usize) {
     (log_sum, num_postings)
 }
 
-fn validate_gain() {
-
-    let gain_func: Option<&'static str> = std::option_env!("GAIN");
-    if gain_func.is_none() {
-        log::info!("Error: A gain function needs to be passed at compile time via the environment variable `GAIN` -- Please recompile...");
-        std::process::exit(1);
-    }
-    let gain_func = gain_func.unwrap();
-    let gain_types = vec!["default", "approx_1", "approx_2"];
-    if gain_types.iter().any(|&i| i == gain_func) {
-        log::info!("Using the `{}` gain function.", gain_func);
-    } else {
-        log::info!("Error: Couldn't match the gain function.");
-        std::process::exit(1); 
-    }
-}
-
-
 fn main() -> Result<()> {
     CombinedLogger::init(vec![
         TermLogger::new(LevelFilter::Info, Config::default(), TerminalMode::Mixed),
         WriteLogger::new(
             LevelFilter::Info,
             Config::default(),
-            std::fs::File::create(format!(
-                "create-rgb-{}.log",
-                std::process::id()
-            ))
-            .expect("can't create file log"),
+            std::fs::File::create(format!("create-rgb-{}.log", std::process::id()))
+                .expect("can't create file log"),
         ),
     ])
     .unwrap();
-
-    // validate the compile-time gain function
-    validate_gain();
 
     let opt = Opt::from_args();
     info!("{:?}", opt);
 
     // Sanity check output options. We want to at least dump the map, dump the ciff, dump the fidx, or compute loggap on the fly...
-    if opt.output_fidx.is_none() && opt.output_ciff.is_none() && opt.output_mapping.is_none() && !opt.loggap{
+    if opt.output_fidx.is_none()
+        && opt.output_ciff.is_none()
+        && opt.output_mapping.is_none()
+        && !opt.loggap
+    {
         info!("Error: Nothing will be output. Check your options and try again.");
         std::process::exit(1);
     }
 
     // Check that we're not trying to both read and write a pre-existing forward index
     let start_fwd = std::time::Instant::now();
-    let forward::Forward { mut docs, uniq_terms } = match opt.input_fidx {
-    	Some(index) => {info!("(1) reading forward index from file"); forward::from_file(index)?},
-    	None => {info!("(1) building forward index"); forward::from_ciff(&opt.input, opt.min_len, opt.cutoff_frequency, opt.output_fidx.as_ref())?},
+    let forward::Forward {
+        mut docs,
+        uniq_terms,
+    } = match opt.input_fidx {
+        Some(index) => {
+            info!("(1) reading forward index from file");
+            forward::from_file(index)?
+        }
+        None => {
+            info!("(1) building forward index");
+            forward::from_ciff(
+                &opt.input,
+                opt.min_len,
+                opt.cutoff_frequency,
+                opt.output_fidx.as_ref(),
+            )?
+        }
     };
 
     // move all empty docs to the end and exclude them from reordering
@@ -168,6 +177,10 @@ fn main() -> Result<()> {
         opt.max_depth,
         depth,
         opt.sort_leaf,
+        &opt.gain_type,
+        &opt.sort_type,
+        opt.cooling,
+        opt.process_mode,
     );
     let rgb_time = start_rgb.elapsed().as_secs_f32();
     info!("rgb duration: {:.2} secs", rgb_time);
@@ -181,7 +194,6 @@ fn main() -> Result<()> {
 
     info!("(5) starting output operations...");
 
- 
     if let Some(output_map) = opt.output_mapping {
         info!(" --> (5.1) output the plain-text mapping file");
         output::dump_order(&docs, output_map);
@@ -193,15 +205,15 @@ fn main() -> Result<()> {
         output::rewrite_ciff(&docs, &opt.input, &output_ciff)?;
         let write_time = start_write.elapsed().as_secs_f32();
         info!("write duration: {:.2} secs", write_time);
-        
+
         if opt.loggap {
             info!("(6) compute loggap cost");
             let (before_log_sum, num_postings) = compute_loggapsum(&opt.input);
             let before_bpi = before_log_sum / num_postings as f64;
-            info!("\tbefore reorder: {:.3} BPI",before_bpi);
+            info!("\tbefore reorder: {:.3} BPI", before_bpi);
             let (after_log_sum, num_postings) = compute_loggapsum(&output_ciff);
             let after_bpi = after_log_sum / num_postings as f64;
-            info!("\t after reorder: {:.3} BPI",after_bpi);
+            info!("\t after reorder: {:.3} BPI", after_bpi);
         }
     } else {
         if opt.loggap {
@@ -212,11 +224,10 @@ fn main() -> Result<()> {
             info!("Remap + LogGap duration: {:.2} secs", write_time);
         }
     }
-    
 
     let all_done_time = start_fwd.elapsed().as_secs_f32();
 
     info!("ALL DONE! duration: {:.2} secs", all_done_time);
-    
+
     Ok(())
 }

@@ -1,17 +1,20 @@
-
 use crate::ciff;
-use crate::forward::Doc;
 use crate::ciff::proto::*;
+use crate::forward::Doc;
 use std::io::Write;
 
 pub fn dump_order<P: AsRef<std::path::Path>>(docs: &[Doc], output_map: P) {
     let mut out = std::fs::File::create(output_map).expect("can not open output mapping file");
     for (new_id, doc) in docs.iter().enumerate() {
-        std::writeln!(out, "{} {} {}", doc.org_id, new_id, doc.leaf_id).expect("can not write to output mapping file");
+        std::writeln!(out, "{} {} {}", doc.org_id, new_id, doc.leaf_id)
+            .expect("can not write to output mapping file");
     }
 }
 
-pub fn remap_ciff<P: AsRef<std::path::Path>>(docs: &[Doc], input_ciff: P) -> Result<(), protobuf::ProtobufError> {
+pub fn remap_ciff<P: AsRef<std::path::Path>>(
+    docs: &[Doc],
+    input_ciff: P,
+) -> Result<(), protobuf::ProtobufError> {
     // (1) create the reverse mapping
     let mut document_mapping: Vec<u32> = vec![0; docs.len()];
     for (new_id, doc) in docs.iter().enumerate() {
@@ -24,7 +27,7 @@ pub fn remap_ciff<P: AsRef<std::path::Path>>(docs: &[Doc], input_ciff: P) -> Res
     let log_gaps: Vec<f64> = (0..256).map(|i| (i as f64).log2()).collect();
     let mut log_sum = 0.0;
     let mut num_postings: usize = 0;
-    
+
     let mut record = ciff_reader.next();
     while let Some(ciff::CiffRecord::PostingsList(plist)) = record {
         let mut mapped_list = PostingsList::default();
@@ -64,19 +67,23 @@ pub fn remap_ciff<P: AsRef<std::path::Path>>(docs: &[Doc], input_ciff: P) -> Res
         record = ciff_reader.next();
     }
     let after_bpi = log_sum / num_postings as f64;
-    log::info!("LogGap after reorder: {:.3} BPI",after_bpi);
-    
+    log::info!("LogGap after reorder: {:.3} BPI", after_bpi);
+
     Ok(())
 }
 
-pub fn rewrite_ciff<P: AsRef<std::path::Path>>(docs: &[Doc], input_ciff: P, output_ciff: P) -> Result<(), protobuf::ProtobufError> {
+pub fn rewrite_ciff<P: AsRef<std::path::Path>>(
+    docs: &[Doc],
+    input_ciff: P,
+    output_ciff: P,
+) -> Result<(), protobuf::ProtobufError> {
     // (1) create the reverse mapping
     let mut document_mapping: Vec<u32> = vec![0; docs.len()];
     for (new_id, doc) in docs.iter().enumerate() {
         document_mapping[doc.org_id as usize] = new_id as u32;
     }
     // (2) read the original ciff and remap ids, write the new ciff
-    log::info!("writing to ciff file: {}",&output_ciff.as_ref().display());
+    log::info!("writing to ciff file: {}", &output_ciff.as_ref().display());
     let mut ciff_outfile = std::fs::File::create(output_ciff).expect("can not create output ciff");
     let ciff_file = std::fs::File::open(input_ciff).expect("can not open input ciff");
     let mut ciff_file = std::io::BufReader::new(ciff_file);
@@ -87,13 +94,14 @@ pub fn rewrite_ciff<P: AsRef<std::path::Path>>(docs: &[Doc], input_ciff: P, outp
     pb_plist.set_style(indicatif::ProgressStyle::default_bar().template(
         "plist_storage: {spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] ({pos}/{len}, ETA {eta}, SPEED: {per_sec})",
     ));
-    let mut ciff_writer = ciff::Writer::from_reader(&mut ciff_outfile,&ciff_reader,"recursive graph bisection")?;
+    let mut ciff_writer =
+        ciff::Writer::from_reader(&mut ciff_outfile, &ciff_reader, "recursive graph bisection")?;
 
     struct CiffDoc {
         id: i32,
         external_id: String,
         length: i32,
-    };
+    }
 
     let mut record = ciff_reader.next();
     while let Some(ciff::CiffRecord::PostingsList(plist)) = record {
