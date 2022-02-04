@@ -40,6 +40,10 @@ struct Opt {
     #[structopt(short, long, default_value = "20")]
     swap_iterations: usize,
 
+    /// Depth where we switch from parallel processing to sequential processing
+    #[structopt(short, long, default_value = "10")]
+    parallel_switch: usize,
+
     /// Show loggap cost
     #[structopt(short, long)]
     loggap: bool,
@@ -146,10 +150,10 @@ fn main() -> Result<()> {
 
     // move all empty docs to the end and exclude them from reordering
     info!("(2) sort empty docs to the back");
-    docs.sort_by(|a, b| b.postings.len().cmp(&a.postings.len()));
+    docs.sort_by(|a, b| b.terms.len().cmp(&a.terms.len()));
     let num_non_empty = docs
         .iter()
-        .position(|d| d.postings.len() == 0)
+        .position(|d| d.terms.len() == 0)
         .unwrap_or(docs.len());
     let fwd_time = start_fwd.elapsed().as_secs_f32();
     info!("fwd duration: {:.2} secs", fwd_time);
@@ -160,14 +164,17 @@ fn main() -> Result<()> {
     info!("(3) perform graph bisection");
     let start_rgb = std::time::Instant::now();
     let depth = 1;
-    rgb::recursive_graph_bisection(
+    // Use iterative processing
+    rgb::recursive_graph_bisection_iterative(
         &mut docs[..num_non_empty],
         uniq_terms,
         opt.swap_iterations,
         opt.recursion_stop,
         opt.max_depth,
+        opt.parallel_switch,
         depth,
         opt.sort_leaf,
+        1
     );
     let rgb_time = start_rgb.elapsed().as_secs_f32();
     info!("rgb duration: {:.2} secs", rgb_time);
@@ -175,8 +182,8 @@ fn main() -> Result<()> {
     // now we can clear some space
     info!("(4) clear forward index");
     docs.par_iter_mut().for_each(|doc| {
-        doc.postings.truncate(0);
-        doc.postings.shrink_to_fit();
+        doc.terms.truncate(0);
+        doc.terms.shrink_to_fit();
     });
 
     info!("(5) starting output operations...");
