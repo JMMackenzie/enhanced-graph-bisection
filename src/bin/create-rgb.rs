@@ -40,6 +40,10 @@ struct Opt {
     #[structopt(short, long, default_value = "20")]
     swap_iterations: usize,
 
+    /// Depth where we switch from parallel processing to sequential processing
+    #[structopt(short, long, default_value = "10")]
+    parallel_switch: usize,
+
     /// Show loggap cost
     #[structopt(short, long)]
     loggap: bool,
@@ -160,14 +164,14 @@ fn main() -> Result<()> {
     info!("(3) perform graph bisection");
     let start_rgb = std::time::Instant::now();
     let depth = 1;
-    //rgb::recursive_graph_bisection(
-    //rgb::recursive_graph_bisection_recurative(
+    // Use iterative processing
     rgb::recursive_graph_bisection_iterative(
         &mut docs[..num_non_empty],
         uniq_terms,
         opt.swap_iterations,
         opt.recursion_stop,
         opt.max_depth,
+        opt.parallel_switch,
         depth,
         opt.sort_leaf,
         1
