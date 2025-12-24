@@ -525,8 +525,7 @@ fn compute_move_gains_a2_seq(
 // using the `GAIN` environment variable
 // PARALLEL VERSION
 fn compute_gains(mut left: &mut [Doc], mut right: &mut [Doc], ldeg: &[i32], rdeg: &[i32]) {
-    let gain_func: Option<&'static str> = std::option_env!("GAIN");
-    let gain_func = gain_func.unwrap();
+    let gain_func: &str = std::option_env!("GAIN").unwrap_or("approx_1");
 
     let log2_left = 0.0;
     let log2_right = 0.0;
@@ -579,11 +578,10 @@ fn compute_gains(mut left: &mut [Doc], mut right: &mut [Doc], ldeg: &[i32], rdeg
 }
 
 // This function is a wrapper to the correct gain function, which is specified at compile-time
-// using the `GAIN` environment variable
+// using the `GAIN` environment variable (defaults to approx_1)
 // SEQUENTIAL VERSION
 fn compute_gains_seq(mut left: &mut [Doc], mut right: &mut [Doc], ldeg: &[i32], rdeg: &[i32]) {
-    let gain_func: Option<&'static str> = std::option_env!("GAIN");
-    let gain_func = gain_func.unwrap();
+    let gain_func: &str = std::option_env!("GAIN").unwrap_or("approx_1");
 
     let log2_left = 0.0;
     let log2_right = 0.0;
