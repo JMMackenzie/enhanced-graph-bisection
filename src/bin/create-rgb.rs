@@ -6,9 +6,9 @@ use simplelog::*;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
-use rgb::forward;
-use rgb::ciff;
-use rgb::output;
+use rgbisect::forward;
+use rgbisect::ciff;
+use rgbisect::output;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -165,7 +165,7 @@ fn main() -> Result<()> {
     let start_rgb = std::time::Instant::now();
     let depth = 1;
     // Use iterative processing
-    rgb::recursive_graph_bisection_iterative(
+    rgbisect::recursive_graph_bisection_iterative(
         &mut docs[..num_non_empty],
         uniq_terms,
         opt.swap_iterations,
