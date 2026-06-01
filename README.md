@@ -41,6 +41,10 @@ corresponds to the reproducibility study discussed above. The codebase works wit
 retrieval experimentation.
 
 
+## Crates
+The library/tool is now available via the [rgbisect crate](https://crates.io/crates/rgbisect).
+If you would like to build/modify the tool yourself, please take a look below.
+
 ## Building the code
 You can build the code using Cargo:
 ```
