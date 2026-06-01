@@ -159,7 +159,7 @@ fn main() -> Result<()> {
     info!("fwd duration: {:.2} secs", fwd_time);
     info!("docs {} non_empty {}", docs.len(), num_non_empty);
     info!("put docs back into default order...");
-    docs.sort_by(|a, b| a.org_id.cmp(&b.org_id));
+    docs[..num_non_empty].sort_by(|a, b| a.org_id.cmp(&b.org_id));
 
     info!("(3) perform graph bisection");
     let start_rgb = std::time::Instant::now();
