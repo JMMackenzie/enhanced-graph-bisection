@@ -1,11 +1,19 @@
 [package]
-name = "rgb"
+name = "rgbisect"
 version = "0.1.0"
-authors = []
-edition = "2018"
+license = "MIT"
+authors = ["Joel Mackenzie <joelmmackenzie@gmail.com>", "Antonio Mallia", "Alistair Moffat", "Matthias Petri"]
+edition = "2024"
+repository = "https://github.com/JMMackenzie/enhanced-graph-bisection"
+readme = "README.md"
+keywords = ["recursive-bisection", "index-compression", "inverted-index", "graph", "ciff"]
+documentation = "https://docs.rs/rgbisect"
+description = "The recursive graph bisection algorithm suite compresses indexes or graphs via identifier reassignment."
 build = "build.rs"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "create-rgb"
+path = "src/bin/create-rgb.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
