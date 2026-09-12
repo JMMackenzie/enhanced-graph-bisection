@@ -14,7 +14,20 @@ and resulting in faster processing.
 
 ## Citation Information
 If you use this code in your own work or research, please consider citing
-our prior work:
+our work:
+
+```
+@ARTICLE{mpm23-tkde,
+  author={Mackenzie, Joel and Petri, Matthias and Moffat, Alistair},
+  journal={IEEE Transactions on Knowledge and Data Engineering}, 
+  title={Tradeoff Options for Bipartite Graph Partitioning}, 
+  year={2023},
+  volume={35},
+  number={8},
+  pages={8644--8657},
+  doi={10.1109/TKDE.2022.3208902}}
+```
+
 ```
 @inproceedings{mpm21-sigir,
  title = {Faster Index Reordering with Bipartite Graph Partitioning},
@@ -24,7 +37,10 @@ our prior work:
  year = {2021},
 }
 ```
-The paper can be found at the following DOI: https://doi.org/10.1145/3404835.3462991
+The extensions outlined are published in TKDE: https://ieeexplore.ieee.org/document/9900428/ 
+
+The original SIGIR laper can be found at the following DOI: https://doi.org/10.1145/3404835.3462991
+
 
 ## Acknowledgements
 This work was built on previous work from Dhulipala et. al:
